@@ -65,12 +65,12 @@ def run_single_action(port, link, loop_count, countdown_time, remaining_time):
 
 
 def adb_clear(port):
-    subprocess.run(["adb", "-s", f"localhost:{port}", "shell", "pm", "clear", "com.scopely.monopolygo"])
-    subprocess.run(["adb", "-s", f"localhost:{port}", "shell", "pm", "clear", "com.google.android.gms"])
+    subprocess.Popen(["adb", "-s", f"localhost:{port}", "shell", "pm", "clear", "com.scopely.monopolygo"], creationflags=subprocess.CREATE_NO_WINDOW)
+    subprocess.Popen(["adb", "-s", f"localhost:{port}", "shell", "pm", "clear", "com.google.android.gms"], creationflags=subprocess.CREATE_NO_WINDOW)
 
 def adb_start_activity(port, link):
-    subprocess.run(["adb", "-s", f"localhost:{port}", "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", link])
-    subprocess.run(["adb", "-s", f"localhost:{port}", "shell", "input", "keyevent", "KEYCODE_ENTER"])
+    subprocess.Popen(["adb", "-s", f"localhost:{port}", "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", link], creationflags=subprocess.CREATE_NO_WINDOW)
+    subprocess.Popen(["adb", "-s", f"localhost:{port}", "shell", "input", "keyevent", "KEYCODE_ENTER"], creationflags=subprocess.CREATE_NO_WINDOW)
 
 def run_actions():
     global stop_threads
