@@ -38,30 +38,6 @@ def save_user_input():
 def open_discord():
     webbrowser.open("https://discord.gg/6KhRWcMK")
 
-def is_port_connected(port):
-    result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
-    output = result.stdout
-    return f"localhost:{port}" in output
-
-def start_adb_server():
-    subprocess.run(["adb", "start-server"], capture_output=True, text=True)
-
-# Connect ADB ports if they are not connected
-def connect_adb_ports(device_ports):
-    def connect_single_device(device_port):
-        try:
-            result = subprocess.run(["adb", "connect", f"localhost:{device_port}"], capture_output=True, text=True)
-            if "connected" in result.stdout:
-                print(f"Successfully connected to port {device_port}")
-            else:
-                print(f"Failed to connect to port {device_port}")
-        except Exception as e:
-            print(f"Error connecting to port {device_port}: {str(e)}")
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(device_ports)) as executor:
-        executor.map(connect_single_device, device_ports)
-
-# Function to run a single action on a specific port
 def run_single_action(port, link, loop_count, countdown_time, remaining_time):
     global stop_threads
 
@@ -71,9 +47,8 @@ def run_single_action(port, link, loop_count, countdown_time, remaining_time):
 
         adb_clear(port)
         adb_start_activity(port, link)
-        time.sleep(3)
+        time.sleep(2)
 
-        # Countdown before the next loop
         for sec in range(countdown_time):
             if stop_threads:
                 break  # Stop
@@ -94,21 +69,41 @@ def adb_clear(port):
 def adb_start_activity(port, link):
     subprocess.Popen(["adb", "-s", f"localhost:{port}", "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", link], creationflags=subprocess.CREATE_NO_WINDOW)
     subprocess.Popen(["adb", "-s", f"localhost:{port}", "shell", "input", "keyevent", "KEYCODE_ENTER"], creationflags=subprocess.CREATE_NO_WINDOW)
-    time.sleep(5)
+    time.sleep(4)
+
+# Function to start the ADB server and connect the ports
+def start_adb_and_connect_ports():
+    try:
+        start_adb_server()
+        connect_adb_ports(device_entry.get().strip().split())
+        messagebox.showinfo("Info", "ADB server started and ports connected successfully.")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to start ADB server and connect ports: {str(e)}")
+
+def start_adb_server():
+    subprocess.run(["adb", "start-server"], capture_output=True, text=True)
+
+def connect_adb_ports(device_ports):
+    def connect_single_device(device_port):
+        try:
+            subprocess.run(["adb", "connect", f"localhost:{device_port}"], capture_output=True, text=True)
+        except Exception as e:
+            pass
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(device_ports)) as executor:
+        executor.map(connect_single_device, device_ports)
 
 def run_actions():
     global stop_threads
     stop_threads = False
-    
-    start_adb_server()
 
-    link = link_entry.get()
+    links = link_entry.get().split()  # Split links by spaces
     loop_count = -1 if is_forever.get() else int(loop_count_entry.get())
     selected_ports_str = device_entry.get().strip()
     selected_ports = selected_ports_str.split()
     countdown_time = int(countdown_entry.get())
 
-    total_actions = len(selected_ports) * loop_count if loop_count != -1 else -1
+    total_actions = len(selected_ports) * loop_count * len(links) if loop_count != -1 else -1
     remaining_time = countdown_time
 
     countdown_label.config(text=f"Countdown: {remaining_time} seconds")
@@ -116,27 +111,28 @@ def run_actions():
     run_button.config(state=tk.DISABLED)
     stop_button.config(state=tk.NORMAL)
 
-    connect_adb_ports(selected_ports)
-
     if loop_count == -1:  # Run forever
-        action_thread = threading.Thread(target=run_actions_forever, args=(link, selected_ports, countdown_time, remaining_time))
+        action_thread = threading.Thread(target=run_actions_forever, args=(links, selected_ports, countdown_time, remaining_time))
     else:
-        action_thread = threading.Thread(target=run_actions_thread, args=(link, loop_count, selected_ports, countdown_time, remaining_time))
-    
+        action_thread = threading.Thread(target=run_actions_thread, args=(links, loop_count, selected_ports, countdown_time, remaining_time))
+
     action_thread.start()
 
-def run_actions_forever(link, selected_ports, countdown_time, remaining_time):
+def run_actions_forever(links, selected_ports, countdown_time, remaining_time):
     global stop_threads
 
     while not stop_threads:
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected_ports)) as executor:
             futures = []
 
-            for port in selected_ports:
+            for link in links:
                 if stop_threads:
                     break
-                future = executor.submit(run_single_action, port, link, 1, countdown_time, remaining_time)
-                futures.append(future)
+                for port in selected_ports:
+                    if stop_threads:
+                        break
+                    future = executor.submit(run_single_action, port, link, 1, countdown_time, remaining_time)
+                    futures.append(future)
 
             concurrent.futures.wait(futures)
 
@@ -148,17 +144,20 @@ def run_actions_forever(link, selected_ports, countdown_time, remaining_time):
     else:
         messagebox.showinfo("Info", "Script stopped.")
 
-def run_actions_thread(link, loop_count, selected_ports, countdown_time, remaining_time):
+def run_actions_thread(links, loop_count, selected_ports, countdown_time, remaining_time):
     global stop_threads
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected_ports)) as executor:
         futures = []
 
-        for port in selected_ports:
+        for link in links:
             if stop_threads:
                 break
-            future = executor.submit(run_single_action, port, link, loop_count, countdown_time, remaining_time)
-            futures.append(future)
+            for port in selected_ports:
+                if stop_threads:
+                    break
+                future = executor.submit(run_single_action, port, link, loop_count, countdown_time, remaining_time)
+                futures.append(future)
 
         concurrent.futures.wait(futures)
 
@@ -180,10 +179,7 @@ def stop_actions():
 def toggle_forever():
     loop_count_entry.config(state=tk.DISABLED if is_forever.get() else tk.NORMAL)
 
-
-
-##########
-##########
+# Create the main application window
 root = tk.Tk()
 root.title("Cube Maker")
 root.configure(bg="#f0f0f0")
@@ -194,45 +190,49 @@ frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 header_label = Label(frame, text="Cube Maker", font=("Helvetica", 16, "bold"), padx=10, pady=10)
 header_label.grid(row=0, column=0, columnspan=4, sticky="ew")
 
-link_label = Label(frame, text="Enter the HTTP link:")
-link_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
+# Button to start ADB server and connect ports
+adb_button = Button(frame, text="Start ADB and Connect Ports", command=start_adb_and_connect_ports, padx=20)
+adb_button.grid(row=1, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+
+link_label = Label(frame, text="Enter the HTTP link (space if multilink):")
+link_label.grid(row=3, column=0, padx=10, pady=5, sticky="w")
 link_entry = Entry(frame, width=40)
-link_entry.grid(row=2, column=1, padx=10, pady=5, sticky="w")
+link_entry.grid(row=3, column=1, padx=10, pady=5, sticky="w")
 link_entry.insert(0, saved_link)
 
 loop_count_label = Label(frame, text="Enter the number of times to run the loop:")
-loop_count_label.grid(row=3, column=0, padx=10, pady=5, sticky="w")
+loop_count_label.grid(row=4, column=0, padx=10, pady=5, sticky="w")
 loop_count_entry = Entry(frame, width=10)
-loop_count_entry.grid(row=3, column=1, padx=10, pady=5, sticky="w")
+loop_count_entry.grid(row=4, column=1, padx=10, pady=5, sticky="w")
 loop_count_entry.insert(0, saved_loop_count)
 
 is_forever = BooleanVar()
 forever_button = Checkbutton(frame, text="FOREVER!", variable=is_forever, command=toggle_forever)
-forever_button.grid(row=3, column=1, padx=(100, 10), pady=5, sticky="w")
+forever_button.grid(row=4, column=1, padx=(100, 10), pady=5, sticky="w")
 
 device_label = Label(frame, text="Enter device port numbers (space-separated):")
-device_label.grid(row=4, column=0, padx=10, pady=5, sticky="w")
+device_label.grid(row=5, column=0, padx=10, pady=5, sticky="w")
 device_entry = Entry(frame, width=40)
-device_entry.grid(row=4, column=1, padx=10, pady=5, sticky="w")
+device_entry.grid(row=5, column=1, padx=10, pady=5, sticky="w")
 device_entry.insert(0, saved_device_ports)
 
 countdown_label = Label(frame, text="Enter countdown time (in seconds):")
-countdown_label.grid(row=5, column=0, padx=10, pady=5, sticky="w")
+countdown_label.grid(row=6, column=0, padx=10, pady=5, sticky="w")
 countdown_entry = Entry(frame, width=10)
-countdown_entry.grid(row=5, column=1, padx=10, pady=5, sticky="w")
+countdown_entry.grid(row=6, column=1, padx=10, pady=5, sticky="w")
 countdown_entry.insert(0, saved_countdown_time)
 
 countdown_label = Label(frame, text="Countdown: 0 seconds")
-countdown_label.grid(row=6, column=0, columnspan=2, padx=10, pady=5)
+countdown_label.grid(row=7, column=0, columnspan=2, padx=10, pady=5)
 
 save_button = Button(frame, text="Save Input", command=save_user_input, padx=20)
-save_button.grid(row=7, column=0, padx=(5, 7.5), pady=10, sticky="e")
+save_button.grid(row=8, column=0, padx=(5, 7.5), pady=10, sticky="e")
 
 run_button = Button(frame, text="Run Actions", command=run_actions, padx=20)
-run_button.grid(row=7, column=1, padx=(7.5, 5), pady=10, sticky="w")
+run_button.grid(row=8, column=1, padx=(7.5, 5), pady=10, sticky="w")
 
 stop_button = Button(frame, text="STOP", command=stop_actions, state=tk.DISABLED, padx=20, width=10)
-stop_button.grid(row=8, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+stop_button.grid(row=9, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
 
 footer_frame = ttk.Frame(root, padding=10)
 footer_frame.grid(row=1, column=0, padx=10, pady=10, sticky="n")
