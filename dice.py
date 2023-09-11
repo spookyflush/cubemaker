@@ -6,6 +6,9 @@ import threading
 import time
 import configparser
 import webbrowser
+import os
+import requests
+import zipfile
 
 # Create or load a configuration file
 config = configparser.ConfigParser()
@@ -47,7 +50,7 @@ def run_single_action(port, link, loop_count, countdown_time, remaining_time):
 
         adb_clear(port)
         adb_start_activity(port, link)
-        time.sleep(2)
+        time.sleep(1.5)
 
         for sec in range(countdown_time):
             if stop_threads:
@@ -69,7 +72,10 @@ def adb_clear(port):
 def adb_start_activity(port, link):
     subprocess.Popen(["adb", "-s", f"localhost:{port}", "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", link], creationflags=subprocess.CREATE_NO_WINDOW)
     subprocess.Popen(["adb", "-s", f"localhost:{port}", "shell", "input", "keyevent", "KEYCODE_ENTER"], creationflags=subprocess.CREATE_NO_WINDOW)
-    time.sleep(4)
+
+    if not remove_delay_var.get():
+        time.sleep(4)
+
 
 # Function to start the ADB server and connect the ports
 def start_adb_and_connect_ports():
@@ -190,9 +196,82 @@ frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 header_label = Label(frame, text="Cube Maker", font=("Helvetica", 16, "bold"), padx=10, pady=10)
 header_label.grid(row=0, column=0, columnspan=4, sticky="ew")
 
-# Button to start ADB server and connect ports
+
+# Open ADB downloader window
+def open_adb_downloader_window():
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    
+    def download_and_extract_adb():
+        # Define the URL for ADB download
+        adb_download_url = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+
+        # Define the path for the downloaded ZIP file
+        zip_file_path = os.path.join(script_directory, "platform-tools-latest-windows.zip")
+
+        try:
+            # Download ADB zip
+            response = requests.get(adb_download_url)
+            with open(zip_file_path, "wb") as zip_file:
+                zip_file.write(response.content)
+
+            # Extract zip file to the script directory
+            with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
+                zip_ref.extractall(script_directory)
+
+            success_message = "ADB downloaded and extracted successfully to the script directory.\n"
+            success_message += "Please move the 'platform-tools' folder to your C drive (e.g., C:\\platform-tools) "
+            success_message += "and then proceed to the next step."
+
+            messagebox.showinfo("Success", success_message)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to download and extract ADB: {str(e)}")
+
+    def open_environment_variables():
+        try:
+            subprocess.Popen(["rundll32.exe", "sysdm.cpl,EditEnvironmentVariables"])
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open Environment Variables: {str(e)}")
+
+    def close_window():
+        adb_root.destroy()
+
+    adb_root = tk.Toplevel(root)  # Create a new top-level window for ADB downloader
+    adb_root.title("ADB Downloader")
+    
+    instructions_label = tk.Label(
+        adb_root,
+        text="1. Click 'Download ADB' to download and extract ADB files.\n\n"
+        "2. Move the 'platform-tools' folder to your C drive (e.g., C:\\platform-tools).\n\n"
+        "3. Click 'Open Environment Variables' to set up ADB in your system's PATH.\n\n"
+        "4. In the 'Edit Environment Variable' window, under 'User variables for [your username],' "
+        "double-click 'Path'.\n\n"
+        "5. Click 'New'.\n\n"
+        "6. Paste 'C:\\platform-tools'.\n\n"
+        "7. Click 'OK' to save the changes.",
+        padx=20,
+        pady=20,
+    )
+    instructions_label.pack()
+    
+    button_frame = tk.Frame(adb_root)
+    button_frame.pack(side=tk.BOTTOM, padx=20, pady=20)
+    
+    download_button = Button(button_frame, text="Download ADB", command=download_and_extract_adb, width=25)
+    download_button.pack(side=tk.LEFT, padx=10, pady=10)
+    
+    env_vars_button = Button(button_frame, text="Open Environment Variables", command=open_environment_variables, width=25)
+    env_vars_button.pack(side=tk.LEFT, padx=10, pady=10)
+    
+    close_button = Button(button_frame, text="Close", command=close_window, width=15)
+    close_button.pack(side=tk.RIGHT, padx=10, pady=10)
+
+adb_downloader_button = Button(frame, text="Download and install ADB", command=open_adb_downloader_window)
+adb_downloader_button.grid(row=1, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+
+
+
 adb_button = Button(frame, text="Start ADB and Connect Ports", command=start_adb_and_connect_ports, padx=20)
-adb_button.grid(row=1, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+adb_button.grid(row=2, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
 
 link_label = Label(frame, text="Enter the HTTP link (space if multilink):")
 link_label.grid(row=3, column=0, padx=10, pady=5, sticky="w")
@@ -221,6 +300,11 @@ countdown_label.grid(row=6, column=0, padx=10, pady=5, sticky="w")
 countdown_entry = Entry(frame, width=10)
 countdown_entry.grid(row=6, column=1, padx=10, pady=5, sticky="w")
 countdown_entry.insert(0, saved_countdown_time)
+
+remove_delay_var = BooleanVar()
+remove_delay_button = Checkbutton(frame, text="Remove Delay", variable=remove_delay_var)
+remove_delay_button.grid(row=6, column=1, padx=(100, 10), pady=5, sticky="w")
+
 
 countdown_label = Label(frame, text="Countdown: 0 seconds")
 countdown_label.grid(row=7, column=0, columnspan=2, padx=10, pady=5)
